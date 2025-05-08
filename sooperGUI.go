@@ -14,20 +14,22 @@ import (
     "log"
     "math"
     "net"
+    "net/http" // Added for HTTP client
     "os"
-    "os/exec"
+    // "os/exec" // No longer used after commenting out st launch
     "strconv"
     "strings"
     "sync"
-    "syscall"
+    // "syscall" // No longer used after commenting out st launch
     "time"
-
+    "bytes" // Added for HTTP POST body
+   
     "github.com/gdamore/tcell/v2"
     "github.com/hypebeast/go-osc/osc"
     "github.com/rivo/tview"
-)
-
-type LoopState struct {
+   )
+   
+   type LoopState struct {
     State        int
     NextState    int
     LoopPos      float32
@@ -92,48 +94,52 @@ Options:
         os.Exit(0)
     }
 
-    // --- Relaunch in a new st terminal if not already in one ---
+    // --- Relaunch in a new st terminal if not already in one (COMMENTED OUT) ---
+    /*
     if os.Getenv("SOOPERGUI_XTERM") == "" {
-        self, err := os.Executable()
-        if err != nil {
-            errorLog.Fatalf("Cannot find executable: %v", err)
-        }
-        args := os.Args[1:]
-        env := append(os.Environ(), "SOOPERGUI_XTERM=1")
-        cmd := exec.Command("st", "-f", "monospace:size=10", "-c", "sooperGUI", "-e", self)
-        cmd.Args = append(cmd.Args, args...)
-        cmd.Env = env
-        cmd.Stdout = os.Stdout
-        cmd.Stderr = os.Stderr
-        cmd.Stdin = os.Stdin
-        infoLog.Println("Launching new st window for GUI...")
-        if err := cmd.Start(); err != nil {
-            errorLog.Fatalf("Failed to launch st: %v", err)
-        }
-        go func() {
-            time.Sleep(1 * time.Second)
-            if cmd.Process != nil {
-                cmd.Process.Signal(syscall.SIGWINCH)
-            }
-        }()
-        cmd.Wait()
-        os.Exit(0)
+    	self, err := os.Executable()
+    	if err != nil {
+    		errorLog.Fatalf("Cannot find executable: %v", err)
+    	}
+    	args := os.Args[1:]
+    	env := append(os.Environ(), "SOOPERGUI_XTERM=1")
+    	cmd := exec.Command("st", "-f", "monospace:size=10", "-c", "sooperGUI", "-e", self)
+    	cmd.Args = append(cmd.Args, args...)
+    	cmd.Env = env
+    	cmd.Stdout = os.Stdout
+    	cmd.Stderr = os.Stderr
+    	cmd.Stdin = os.Stdin
+    	infoLog.Println("Launching new st window for GUI...")
+    	if err := cmd.Start(); err != nil {
+    		errorLog.Fatalf("Failed to launch st: %v", err)
+    	}
+    	go func() {
+    		time.Sleep(1 * time.Second)
+    		if cmd.Process != nil {
+    			cmd.Process.Signal(syscall.SIGWINCH)
+    		}
+    	}()
+    	cmd.Wait()
+    	os.Exit(0)
     }
-
-    // --- In the child process: set up logging and terminal colors ---
+    */
+   
+    // --- In the child process: set up logging and terminal colors (COMMENTED OUT as it depends on SOOPERGUI_XTERM) ---
+    /*
     if os.Getenv("SOOPERGUI_XTERM") != "" {
-        fmt.Print("\033]10;#00FF00\007\033]11;#000000\007")
-        ppid := os.Getppid()
-        parentStdout, _ := os.OpenFile(fmt.Sprintf("/proc/%d/fd/1", ppid), os.O_WRONLY, 0)
-        parentStderr, _ := os.OpenFile(fmt.Sprintf("/proc/%d/fd/2", ppid), os.O_WRONLY, 0)
-        if parentStdout != nil {
-            infoLog.SetOutput(parentStdout)
-        }
-        if parentStderr != nil {
-            errorLog.SetOutput(parentStderr)
-        }
+    	fmt.Print("\033]10;#00FF00\007\033]11;#000000\007")
+    	ppid := os.Getppid()
+    	parentStdout, _ := os.OpenFile(fmt.Sprintf("/proc/%d/fd/1", ppid), os.O_WRONLY, 0)
+    	parentStderr, _ := os.OpenFile(fmt.Sprintf("/proc/%d/fd/2", ppid), os.O_WRONLY, 0)
+    	if parentStdout != nil {
+    		infoLog.SetOutput(parentStdout)
+    	}
+    	if parentStderr != nil {
+    		errorLog.SetOutput(parentStderr)
+    	}
     }
-
+    */
+   
     // --- Allocate a UDP port for OSC replies ---
     listener, err := net.ListenPacket("udp", ":0")
     if err != nil {
@@ -313,45 +319,100 @@ Options:
 
     table.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey { return event })
     table.SetMouseCapture(func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
-        if action == tview.MouseLeftClick || action == tview.MouseLeftDown || action == tview.MouseMove {
-            x, y := event.Position()
-            row, col := table.CellAt(x, y)
-            lX, _, width := table.GetCell(row,col).GetLastPosition()
-            infoLog.Printf("Coords: %d, %d", x, y)
-            if row > 0 && col == 7 && row <= loopCount {
-                leftX := x - lX
-                var fill float32
-                fill = float32(leftX) / float32(width)
-                var wet float32
-                wet = float32(math.Pow(10, float64(fill)*(meterMaxDB-meterMinDB)/20.0 + meterMinDB/20.0))
-                // wet = float32(math.Pow(10, float64(fill)))
-                if *debugFlag {
-                    // infoLog.Printf("DEBUG: Level cell width=%d, mouse x=%d, leftX=%d, rightX=%d, clampedX=%d, cellX=%d, fill=%.6f, wet=%.6f", width, x, leftX, rightX, clampedX, cellX, fill, wet)
-                }
-                infoLog.Printf("meterMaxDB = %f", meterMaxDB)
-                infoLog.Printf("meterMinDB = %f", meterMinDB)
-                infoLog.Printf("fill = %f  |  wet = %f", fill, wet)
-                infoLog.Printf("x, y = (%d, %d)  |  Row, Col = (%d, %d)  |  leftX = %d", x, y, row, col, leftX)
-                mu.Lock()
-                loopStates[row-1].Wet = wet
-                mu.Unlock()
-                go func(loopIdx int, val float32) {
-                    msg := osc.NewMessage(fmt.Sprintf("/sl/%d/set", loopIdx))
-                    msg.Append("wet")
-                    msg.Append(val)
-                    if *debugFlag {
-                        infoLog.Printf("OSC OUT: %s %v", msg.Address, msg.Arguments)
-                    }
-                    client := osc.NewClient(oscHost, oscPort)
-                    _ = client.Send(msg)
-                    if *debugFlag {
-                        infoLog.Printf("Set wet for loop %d to %.6f", loopIdx, val)
-                    }
-                }(row-1, wet)
-                return action, event
-            }
-        }
-        return action, event
+    	if action == tview.MouseLeftClick || action == tview.MouseLeftDown || action == tview.MouseMove {
+    		x, y := event.Position()
+    		row, col := table.CellAt(x, y)
+    		if row == 0 { // Clicked on header
+    			return action, event
+    		}
+    		// GetLastPosition returns x, y, width (of the cell content, not the full cell if padded)
+    		// We need the cell's actual display width for accurate fill calculation.
+    		// tview.Table.GetCell(row, col).GetRegion() might be better, or rely on fixed/expansion.
+    		// For now, let's assume GetLastPosition's width is sufficient if the cell isn't heavily padded.
+    		// A more robust way might be to calculate based on screenWidth and column proportions.
+    		// However, the original code used GetLastPosition's width.
+    		cellContentX, _, cellContentWidth := table.GetCell(row, col).GetLastPosition()
+   
+   
+    		if row > 0 && col == 7 && row <= loopCount { // Column 7 is "Level"
+    			// mouseXrelative is the click position relative to the start of the cell's content area
+    			mouseXrelative := x - cellContentX
+    			var fill float32
+    			if cellContentWidth > 0 {
+    				fill = float32(mouseXrelative) / float32(cellContentWidth)
+    			} else {
+    				fill = 0
+    			}
+    			// Removed erroneous second declaration of fill and usage of cellWidth
+   
+    			// Cap fill based on the desired max wet value of 0.921
+    			// max_fill_for_0_921_wet = (20*log10(0.921) - meterMinDB) / (meterMaxDB - meterMinDB)
+    			// max_fill_for_0_921_wet = (-0.71508 - (-70.0)) / (0.0 - (-70.0))
+    			// max_fill_for_0_921_wet = 69.28492 / 70.0 = 0.98978457
+    			const maxFill = 0.98978457
+    			if fill > maxFill {
+    				fill = maxFill
+    			}
+    			if fill < 0 {
+    				fill = 0
+    			}
+   
+    			var wet float32
+    			// wet = float32(math.Pow(10, (float64(fill)*(meterMaxDB-meterMinDB)+meterMinDB)/20.0))
+    			// Simplified: wet = 10^((fill * (0 - (-70)) + (-70)) / 20) = 10^((fill*70 - 70)/20)
+    			wet = float32(math.Pow(10, (float64(fill)*(meterMaxDB-meterMinDB)+meterMinDB)/20.0))
+   
+   
+    			// Ensure wet is capped at 0.921 (due to potential float precision issues with fill)
+    			const maxWet = 0.921
+    			if wet > maxWet {
+    				wet = maxWet
+    			}
+    			if wet < 0 { // Should not happen if fill is >= 0
+    			    wet = 0
+    			}
+   
+   
+    			if *debugFlag {
+    				infoLog.Printf("Mouse: x=%d, y=%d | Cell: r=%d, c=%d | RelX=%d, cellContentW=%d | Fill=%.4f, Wet=%.4f", x, y, row, col, mouseXrelative, cellContentWidth, fill, wet)
+    			}
+   
+    			mu.Lock()
+    			// loopStates is 0-indexed
+    			if loopStates[row-1] != nil {
+    				loopStates[row-1].Wet = wet
+    			}
+    			mu.Unlock()
+   
+    			// Send HTTP POST request
+    			go func(loopID int, valueToSend float32) {
+    				// loopID for SooperLooper is 1-based in the URL
+    				url := fmt.Sprintf("http://localhost:9090/strip/Sooper%d/Gain/Gain (dB)", loopID)
+    				body := []byte(fmt.Sprintf("%f", valueToSend))
+   
+    				req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
+    				if err != nil {
+    					errorLog.Printf("Error creating HTTP request for loop %d: %v", loopID, err)
+    					return
+    				}
+    				req.Header.Set("Content-Type", "text/plain")
+   
+    				httpClient := &http.Client{Timeout: time.Second * 2}
+    				resp, err := httpClient.Do(req)
+    				if err != nil {
+    					errorLog.Printf("Error sending HTTP POST for loop %d to %s: %v", loopID, url, err)
+    					return
+    				}
+    				defer resp.Body.Close()
+   
+    				if *debugFlag {
+    					infoLog.Printf("HTTP POST to %s with value %.4f, Status: %s", url, valueToSend, resp.Status)
+    				}
+    			}(row, wet) // 'row' is already 1-based for SooperLooper ID in this context
+    			return action, event
+    		}
+    	}
+    	return action, event
     })
 
     go func() {
