@@ -31,6 +31,7 @@ This project consists of a Terminal User Interface (TUI) for the SooperLooper li
         *   **From Source**: If not available via package manager or for the latest versions, you may need to compile from source. This typically involves downloading the source code, installing build dependencies (like a C++ compiler, JACK, liblo, etc.), and then running `configure`, `make`, and `make install`.
         *   **Official Documentation**: **Always refer to the official SooperLooper website and documentation for the most accurate and up-to-date installation instructions for your system.** Its installation is beyond the scope of this project's setup.
     *   **Verification**: After installation, try running `sooperlooper --version` or `sooperlooper --help` in your terminal to ensure it's installed correctly and in your PATH.
+    *   **JACK Audio Server**: SooperLooper relies heavily on the JACK Audio Connection Kit. **You must have JACK installed and correctly configured for your audio hardware.** Issues like "cannot connect to jack", "Cannot initialize driver", or "Failed to open server" often point to problems with JACK setup or permissions (e.g., real-time scheduling, memory locking). Tools like `qjackctl` can help manage and troubleshoot JACK. Resolving JACK issues is system-specific and often involves configuring audio groups, system limits, and JACK's own settings to match your sound card.
 
 ## Setup
 
