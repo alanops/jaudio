@@ -72,8 +72,10 @@ type ButtonState struct {
 // or truly global singletons if managed carefully (e.g., with mutexes for concurrent access).
 var (
 	// Regex for parsing the custom strip gain path.
-	// It captures the numeric ID from "/strip/Sooper<ID>/Gain/Gain (dB)".
-	stripGainPathRegex = regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`)
+	// It captures the numeric ID from "/strip/Sooper<ID>/Gain/Gain%20(dB)".
+	// Note: In Go's regex, `\` escapes special characters like `(`.
+	// The `%` does not need escaping here.
+	stripGainPathRegex = regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain%20\(dB\)$`)
 
 	// oscHost is the IP address or hostname of the SooperLooper OSC server.
 	// Default is "127.0.0.1" (localhost), meaning SooperLooper is expected to be running on the same machine.
@@ -322,7 +324,7 @@ Options:
 
 				// Poll the custom strip gain from the mock API (or actual target on port 9090)
 				if mockClient != nil { // Ensure mockClient is initialized
-					pollStripGain(mockClient, i+1, returnURL, stripGainPathRegex.String(), debugFlag)
+					pollStripGain(mockClient, i+1, returnURL, debugFlag)
 				}
 			}
 			// time.Sleep pauses the current goroutine for at least the specified duration.
@@ -819,8 +821,8 @@ func pollControl(client *osc.Client, loop int, control string, returnURL string,
 // of the custom /strip/Sooper<ID>/Gain/Gain%20(dB) parameter.
 // loopID_1based is the 1-based loop identifier.
 // sooperGUIReturnURL is the OSC URL of sooperGUI's main listener (e.g., "osc.udp://127.0.0.1:9951").
-// replyPathPattern is the OSC address pattern the mock should use for its reply (e.g., "/strip/Sooper%d/Gain/Gain%%20(dB)").
-func pollStripGain(oscClient *osc.Client, loopID_1based int, sooperGUIReturnURL string, replyPathPattern string, debugFlag *bool) {
+// debugFlag is a pointer to the global debug flag.
+func pollStripGain(oscClient *osc.Client, loopID_1based int, sooperGUIReturnURL string, debugFlag *bool) {
 	if oscClient == nil {
 		if *debugFlag {
 			errorLog.Println("pollStripGain: OSC client (for mock/custom endpoint) is nil.")
@@ -829,47 +831,20 @@ func pollStripGain(oscClient *osc.Client, loopID_1based int, sooperGUIReturnURL 
 	}
 
 	// The message we send to the mock/custom endpoint to request the value.
-	// It includes the loop ID it should get the value for.
 	getRequestAddr := fmt.Sprintf("/get_strip_gain")
 	msg := osc.NewMessage(getRequestAddr)
 	msg.Append(int32(loopID_1based)) // Argument 0: the 1-based loop ID
 	msg.Append(sooperGUIReturnURL)   // Argument 1: where the mock should send its reply
 
-	// Argument 2: The specific path the mock should use for its reply, with the loopID interpolated.
-	// This is the path that sooperGUI's handleOSC is already listening for.
-	// actualReplyPath := fmt.Sprintf(strings.Replace(replyPathPattern, `(\d+)`, "%d", 1), loopID_1based) // Unused variable
-	// Ensure the reply path for Gain (dB) uses %20 if that's what the regex expects for incoming.
-	// The stripGainPathRegex is: `^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`
+	// Argument 2: The specific path the mock should use for its reply.
+	// This must match what stripGainPathRegex expects, including "%20".
 	// The Sprintf for sending from mouse is: "/strip/Sooper%d/Gain/Gain%%20(dB)"
-	// So the reply path should also be /strip/Sooper%d/Gain/Gain%20(dB)
-	// The stripGainPathRegex in handleOSC is `^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`
-	// This needs to be consistent. Let's assume handleOSC expects the literal space for now,
-	// and the Sprintf for sending from mouse was specific for a target that needs %20.
-	// For polling, the reply path should match what handleOSC's stripGainPathRegex expects.
-	// The stripGainPathRegex is: `^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`
-	// So, the reply path should be like: /strip/Sooper1/Gain/Gain (dB)
-	// The Sprintf for sending from mouse is: "/strip/Sooper%d/Gain/Gain%%20(dB)"
-	// This is a mismatch.
-	// Let's make the reply path for polling match what the mouse sends, and adjust handleOSC regex.
-	// Mouse sends: /strip/Sooper%d/Gain/Gain%20(dB)
-	// So, reply path for polling should be: /strip/Sooper%d/Gain/Gain%20(dB)
-	// And handleOSC regex should match this.
-
-	// Let's assume the target (mock or real) expects /get_strip_gain <loopID_1based> <return_url_for_gui> <reply_path_for_gui>
-	// And it will reply to <return_url_for_gui> using <reply_path_for_gui> <value>
-	// The reply_path_for_gui should be what sooperGUI's handleOSC expects for the strip gain.
-	// Current handleOSC stripGainPathRegex: `^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`
-	// This means the reply from mock should be to e.g. /strip/Sooper1/Gain/Gain (dB)
-
-	// Let's simplify: the mock will reply to the path that sooperGUI is already listening on for strip gain.
-	// That path is defined by stripGainPathRegex.
-	// The reply path for the mock to use:
-	replyPathForMock := fmt.Sprintf("/strip/Sooper%d/Gain/Gain (dB)", loopID_1based) // Matches current stripGainPathRegex in handleOSC
+	// The stripGainPathRegex is now: `^/strip/Sooper(\d+)/Gain/Gain%20\(dB\)$`
+	replyPathForMock := fmt.Sprintf("/strip/Sooper%d/Gain/Gain%%20(dB)", loopID_1based) // Use %% for literal %
 	msg.Append(replyPathForMock)
 
-
 	if *debugFlag {
-		infoLog.Printf("OSC OUT (PollStripGain) to MOCK API %s: Args %v", getRequestAddr, msg.Arguments)
+		infoLog.Printf("OSC OUT (PollStripGain) to MOCK API %s: Args %v. Expecting reply to %s on path %s", getRequestAddr, msg.Arguments, sooperGUIReturnURL, replyPathForMock)
 	}
 	err := oscClient.Send(msg)
 	if err != nil {
