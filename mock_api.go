@@ -92,9 +92,9 @@ func main() {
 
 					err = replyClient.Send(replyMsg)
 					if err != nil {
-						log.Printf("Mock OSC: Error sending reply to %s on path %s: %v\n", returnURL, replyPath, err)
+						log.Printf("Mock OSC: Error sending reply to %s (target %s:%d) on path %s: %v\n", returnURL, host, port, replyPath, err)
 					} else {
-						fmt.Printf("Mock OSC: Sent reply to %s path %s with value %f for loop %d\n", returnURL, replyPath, valueToReturn, loopID_1based)
+						fmt.Printf("Mock OSC: Sent reply to %s (target %s:%d) path %s with value %f for loop %d\n", returnURL, host, port, replyPath, valueToReturn, loopID_1based)
 					}
 
 				} else {

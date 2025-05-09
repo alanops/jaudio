@@ -259,10 +259,14 @@ Options:
 	// Add a message handler for all incoming OSC messages ("*").
 	// The handler is an anonymous function (a closure) that takes an *osc.Message.
 	dispatcher.AddMsgHandler("*", func(msg *osc.Message) {
-		// If the debug flag is enabled, log the incoming message.
+		// Log ALL incoming messages unconditionally before further processing to aid feedback debugging.
+		// This will show if replies from mock_api.go are reaching this listener.
+		log.Printf("VERBOSE OSC IN (Main Dispatcher): Address: %s, Arguments: %v", msg.Address, msg.Arguments)
+
+		// If the debug flag is enabled, log the incoming message (this is now somewhat redundant but kept for consistency).
 		// *debugFlag dereferences the pointer to get the boolean value.
 		if *debugFlag {
-			infoLog.Printf("OSC IN: %s %v", msg.Address, msg.Arguments)
+			infoLog.Printf("OSC IN (Debug): %s %v", msg.Address, msg.Arguments)
 		}
 		// Pass the message to the handleOSC function for processing.
 		handleOSC(msg)
@@ -514,35 +518,30 @@ Options:
 					fill = 0 // Avoid division by zero if cell width is 0.
 				}
 
-				// Cap 'fill' to ensure the resulting 'wet' value doesn't exceed 0.921.
-				// This maxFill value is derived from the logarithmic conversion formula used for 'wet'.
-				// max_fill_for_0_921_wet = (20*log10(0.921) - meterMinDB) / (meterMaxDB - meterMinDB)
-				// This evaluates to approx 0.98978457.
-				const maxFill = 0.98978457
-				if fill > maxFill {
-					fill = maxFill
+				// Ensure fill is within the 0.0 to 1.0 range initially.
+				if fill > 1.0 {
+					fill = 1.0
 				}
-				if fill < 0 { // Ensure fill is not negative.
+				if fill < 0 {
 					fill = 0
 				}
 
-				var wet float32 // The calculated wet level (amplitude, 0.0 to ~0.921).
-				// Convert the linear 'fill' value to a logarithmic 'wet' value (amplitude).
-				// This formula maps the fill (0-1 range, effectively capped by maxFill)
-				// to an amplitude scale based on meterMinDB and meterMaxDB.
-				wet = float32(math.Pow(10, (float64(fill)*(meterMaxDB-meterMinDB)+meterMinDB)/20.0))
+				// For linear control, 'wet' is directly proportional to 'fill'.
+				// The maximum desired 'wet' value is 0.921.
+				// So, 'wet' will be 'fill' scaled to the range [0, 0.921].
+				const maxWetValue = 0.921
+				var wet float32 = fill * maxWetValue
 
-				// Ensure 'wet' is strictly capped at 0.921 due to potential floating point inaccuracies.
-				const maxWet = 0.921
-				if wet > maxWet {
-					wet = maxWet
+				// Ensure 'wet' is strictly capped due to potential floating point inaccuracies or if fill was > 1 initially.
+				if wet > maxWetValue {
+					wet = maxWetValue
 				}
 				if wet < 0 { // Should not happen if fill is non-negative.
 					wet = 0
 				}
 
 				if *debugFlag {
-					infoLog.Printf("Mouse: x=%d, y=%d | Cell: r=%d, c=%d | RelX=%d, cellContentW=%d | Fill=%.4f, Wet=%.4f", x, y, row, col, mouseXrelative, cellContentWidth, fill, wet)
+					infoLog.Printf("Mouse: x=%d, y=%d | Cell: r=%d, c=%d | RelX=%d, cellContentW=%d | RawFill=%.4f, LinearWet=%.4f", x, y, row, col, mouseXrelative, cellContentWidth, fill, wet)
 				}
 
 				// Update the local state for immediate TUI feedback.
