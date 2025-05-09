@@ -97,6 +97,8 @@ var (
 	// client is the OSC client used to send messages to SooperLooper.
 	// It's a pointer to an osc.Client struct.
 	client *osc.Client
+	// mockClient is a separate OSC client for sending messages to the mock_api.go (on port 9090).
+	mockClient *osc.Client
 
 	// infoLog and errorLog are custom loggers.
 	// log.New creates a new logger. os.Stdout and os.Stderr are standard output and standard error file descriptors.
@@ -244,6 +246,13 @@ Options:
 	client = osc.NewClient(oscHost, oscPort)
 	infoLog.Printf("Connecting to SooperLooper OSC at %s:%d", oscHost, oscPort)
 
+	// Create an OSC client for the mock API (listening on localhost:9090).
+	mockAPIHost := "127.0.0.1" // Mock API is expected to be local
+	mockAPIPort := 9090
+	mockClient = osc.NewClient(mockAPIHost, mockAPIPort)
+	infoLog.Printf("OSC client for Mock API configured for %s:%d", mockAPIHost, mockAPIPort)
+
+
 	// Create an OSC dispatcher. A dispatcher routes incoming OSC messages to handler functions
 	// based on their OSC address patterns.
 	dispatcher := osc.NewStandardDispatcher()
@@ -289,9 +298,9 @@ Options:
 		registerAutoUpdate(client, i, "loop_pos", returnURL, debugFlag)
 		registerAutoUpdate(client, i, "in_peak_meter", returnURL, debugFlag)
 		registerAutoUpdate(client, i, "out_peak_meter", returnURL, debugFlag)
-		registerAutoUpdate(client, i, "wet", returnURL, debugFlag)
+		// registerAutoUpdate(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 		// Also poll for the initial 'wet' value.
-		pollControl(client, i, "wet", returnURL, debugFlag)
+		// pollControl(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 	}
 
 	// --- Poll for state and wet value at the user-configured refreshRate ---
@@ -303,7 +312,7 @@ Options:
 			for i := 0; i < loopCount; i++ {
 				pollControl(client, i, "state", returnURL, debugFlag)
 				pollControl(client, i, "next_state", returnURL, debugFlag)
-				pollControl(client, i, "wet", returnURL, debugFlag) // Continue polling wet
+				// pollControl(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 			}
 			// time.Sleep pauses the current goroutine for at least the specified duration.
 			time.Sleep(time.Duration(refreshRate) * time.Millisecond)
@@ -539,25 +548,21 @@ Options:
 
 				// Send OSC message for level control.
 				go func(loopID int, valueToSend float32) {
-					// Construct the OSC address. Note: SooperLooper loop IDs are typically 0-indexed in OSC paths like /sl/0/set
-					// However, the new endpoint is specified as /strip/Sooper<ID>/Gain/Gain (dB) where ID is 1-based.
-					// We use 'row' which is 1-based from the table.
-					oscAddress := fmt.Sprintf("/strip/Sooper%d/Gain/Gain (dB)", loopID)
+					// Construct the OSC address with %20 for space, as requested.
+					oscAddress := fmt.Sprintf("/strip/Sooper%d/Gain/Gain%%20(dB)", loopID)
 					msg := osc.NewMessage(oscAddress)
 					msg.Append(valueToSend) // Append the float value.
 
-					// Use the global OSC client.
-					// Ensure 'client' is initialized and available.
-					// The client is configured with oscHost and oscPort from flags/defaults.
-					if client != nil {
-						err := client.Send(msg)
+					// Use the mockClient for sending to the mock API on port 9090.
+					if mockClient != nil {
+						err := mockClient.Send(msg)
 						if err != nil {
-							errorLog.Printf("Error sending OSC message to %s for loop %d: %v", oscAddress, loopID, err)
+							errorLog.Printf("Error sending OSC message to MOCK API %s for loop %d: %v", oscAddress, loopID, err)
 						} else if *debugFlag {
-							infoLog.Printf("OSC OUT to %s with value %.4f", oscAddress, valueToSend)
+							infoLog.Printf("OSC OUT to MOCK API %s with value %.4f", oscAddress, valueToSend)
 						}
 					} else {
-						errorLog.Println("OSC client is not initialized. Cannot send level update.")
+						errorLog.Println("Mock OSC client is not initialized. Cannot send level update to mock API.")
 					}
 				}(row, wet) // Pass current 'row' (1-based loopID) and 'wet' value to the goroutine.
 				return action, event // Event handled.
