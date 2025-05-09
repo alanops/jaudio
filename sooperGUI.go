@@ -289,9 +289,9 @@ Options:
 		registerAutoUpdate(client, i, "loop_pos", returnURL, debugFlag)
 		registerAutoUpdate(client, i, "in_peak_meter", returnURL, debugFlag)
 		registerAutoUpdate(client, i, "out_peak_meter", returnURL, debugFlag)
-		registerAutoUpdate(client, i, "wet", returnURL, debugFlag)
+		// registerAutoUpdate(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 		// Also poll for the initial 'wet' value.
-		pollControl(client, i, "wet", returnURL, debugFlag)
+		// pollControl(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 	}
 
 	// --- Poll for state and wet value at the user-configured refreshRate ---
@@ -303,7 +303,7 @@ Options:
 			for i := 0; i < loopCount; i++ {
 				pollControl(client, i, "state", returnURL, debugFlag)
 				pollControl(client, i, "next_state", returnURL, debugFlag)
-				pollControl(client, i, "wet", returnURL, debugFlag) // Continue polling wet
+				// pollControl(client, i, "wet", returnURL, debugFlag) // Removed: "wet" is now handled by /strip/... path
 			}
 			// time.Sleep pauses the current goroutine for at least the specified duration.
 			time.Sleep(time.Duration(refreshRate) * time.Millisecond)
