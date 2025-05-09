@@ -1,6 +1,40 @@
 # Changelog
 
-## `mock_api.go`
+## [Date of Last Major Change - e.g., 2025-05-09] - OSC Control Restoration & ST Launch
+
+### `mock_api.go`
+
+*   **Protocol Reversion: HTTP to OSC Server**
+    *   Converted the mock API entirely from an HTTP server back to an OSC server.
+    *   Now listens for OSC messages on UDP port 9090 (e.g., `127.0.0.1:9090`).
+    *   Specifically handles incoming OSC messages matching the address pattern `/strip/Sooper<ID>/Gain/Gain (dB)`.
+    *   Extracts the SooperLooper ID (from the path) and a single float32 argument (gain value) from these messages.
+    *   Logs the received OSC data to the console.
+*   **Dependencies:**
+    *   Removed HTTP-related packages (`io`, `net/http`).
+    *   Added `github.com/hypebeast/go-osc/osc` for OSC server functionality.
+    *   Kept `regexp` for path matching and `strconv` for ID conversion.
+
+### `sooperGUI.go`
+
+*   **Level Control Reverted to OSC (Send & Receive):**
+    *   **Sending:** Mouse interactions on the "Level" column now send OSC messages to the target address `/strip/Sooper<ID>/Gain/Gain (dB)` (where `<ID>` is 1-based). The message contains a single `float32` argument representing the gain value.
+    *   **Receiving:** Added logic to `handleOSC` to process incoming OSC messages that match the pattern `/strip/Sooper<ID>/Gain/Gain (dB)`. If such a message is received with a float argument, the GUI's internal "Wet" state (and thus the "Level" display) for the corresponding loop is updated. This allows for bidirectional updates if the target software sends messages on this path.
+    *   Value capping for the level at `0.921` (and the corresponding `fill` value) remains in place.
+*   **`st` Terminal Relaunch Restored:**
+    *   The functionality to automatically relaunch `sooperGUI.go` within an `st` terminal upon startup has been restored (uncommented).
+    *   The associated logic for setting terminal colors and redirecting logs when running inside `st` has also been restored.
+    *   Ensured `os/exec` and `syscall` imports are active for this feature.
+*   **Import Management:**
+    *   Removed `net/http` and `bytes` imports as they are no longer needed for level control.
+    *   Added `regexp` import for matching the custom OSC path for incoming level updates.
+*   **Code Comments:**
+    *   Added extensive, beginner-friendly comments throughout the codebase to explain Go constructs and application logic.
+
+---
+## [Previous Date] - HTTP Level Control & Initial Setup (Mistaken Direction)
+
+### `mock_api.go`
 
 *   **Enhanced HTTP Handling for `/strip/` routes:**
     *   The primary handler for `/strip/` now uses regular expressions to differentiate and manage specific path patterns.
@@ -20,7 +54,7 @@
 *   **Dependencies:**
     *   Added `io`, `regexp`, and `strings` to imports to support the new functionality.
 
-## `sooperGUI.go`
+### `sooperGUI.go`
 
 *   **Level Column Control Rework (HTTP Integration):**
     *   The mouse interaction logic for the "Level" column (column 7 in the TUI) has been significantly changed.
