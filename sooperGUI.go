@@ -20,11 +20,11 @@ import (
 	"net"   // Provides a portable interface for network I/O, including TCP/IP, UDP, domain name resolution, and Unix domain sockets.
 	"net/http" // Provides HTTP client and server implementations. Used here for sending HTTP POST requests.
 	"os"    // Provides a platform-independent interface to operating system functionality.
-	// "os/exec" // Provides functions for running external commands. No longer used after commenting out 'st' terminal launch.
+	"os/exec" // Provides functions for running external commands.
 	"strconv" // Implements conversions to and from string representations of basic data types.
 	"strings" // Implements simple functions to manipulate UTF-8 encoded strings.
 	"sync"    // Provides basic synchronization primitives such as mutual exclusion locks (mutexes).
-	// "syscall" // Contains an interface to the low-level operating system primitives. No longer used.
+	"syscall" // Contains an interface to the low-level operating system primitives.
 	"time" // Provides time-related functionality.
 
 	// Third-party packages:
@@ -167,7 +167,6 @@ Options:
 	// This section was intended to make the GUI run in a specific terminal ('st').
 	// It's commented out because 'st' might not be installed on all systems,
 	// and running external commands like this can be complex to manage robustly.
-	/*
 	if os.Getenv("SOOPERGUI_XTERM") == "" { // Check an environment variable
 		self, err := os.Executable() // Get path to current executable
 		if err != nil {
@@ -196,12 +195,10 @@ Options:
 		cmd.Wait() // Wait for the 'st' process to exit
 		os.Exit(0) // Exit this parent process
 	}
-	*/
 
 	// --- In the child process: set up logging and terminal colors (COMMENTED OUT as it depends on SOOPERGUI_XTERM) ---
 	// This section was for when the program was relaunched inside 'st'.
 	// It tried to set terminal colors and redirect logging back to the original parent terminal.
-	/*
 	if os.Getenv("SOOPERGUI_XTERM") != "" {
 		fmt.Print("\033]10;#00FF00\007\033]11;#000000\007") // ANSI escape codes for colors
 		ppid := os.Getppid() // Get parent process ID
@@ -215,7 +212,6 @@ Options:
 			errorLog.SetOutput(parentStderr)
 		}
 	}
-	*/
 
 	// --- Allocate a UDP port for OSC replies ---
 	// SooperLooper needs a return address to send updates back to this GUI.
