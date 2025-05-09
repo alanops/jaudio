@@ -3,83 +3,123 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/hypebeast/go-osc/osc"
 )
 
-func main() {
-	// Define the OSC address pattern we are interested in.
-	// This regex will capture the numeric ID part of "Sooper<ID>".
-	// Example: /strip/Sooper1/Gain/Gain (dB) -> ID will be "1"
-	// Note: OSC addresses don't typically contain spaces or parentheses,
-	// but we are matching the specific string provided.
-	// The path in OSC is usually a forward-slash separated string.
-	// The regex needs to match the literal characters, including parentheses and the literal "%20".
-	// We use raw string literals (backticks) for the regex pattern
-	// to avoid needing to double-escape backslashes for special characters like (.
-	// The "%" also doesn't need escaping in a raw string literal for regex.
-	pathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain%20\(dB\)$`)
+// Placeholder for current gain values, if we want the mock to have some state.
+// For now, it will just send a fixed value back.
+// var mockStripGains = make(map[int]float32)
 
-	// Create a new OSC dispatcher.
-	// The dispatcher is responsible for routing incoming OSC messages
-	// to the correct handler functions based on their address.
+func main() {
+	// Regex for matching the path where gain values are SET or where UPDATES for gain values arrive.
+	// Example: /strip/Sooper1/Gain/Gain%20(dB)
+	stripGainPathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain%20\(dB\)$`)
+
 	dispatcher := osc.NewStandardDispatcher()
 
-	// Add a handler function for any OSC message that matches the regex.
-	// We use a generic "*" handler and then filter by regex inside,
-	// as the go-osc dispatcher doesn't directly support regex matching for handlers.
-	// Alternatively, one could register a handler for "/strip/*" if the library supports wildcards,
-	// or iterate through expected paths if IDs are known.
-	// For this specific case, we'll check the address inside a global handler.
+	// Handler for SETTING the gain value (e.g., from sooperGUI's mouse drag)
+	// This handler also implicitly handles incoming updates if the target sends them on this path.
 	err := dispatcher.AddMsgHandler("*", func(msg *osc.Message) {
-		fmt.Printf("Received OSC message: %s %v\n", msg.Address, msg.Arguments)
+		// Log all messages first for general debugging
+		// msg.Sender() is not available directly on osc.Message with this library's dispatcher.
+		// The return address for /get_strip_gain comes from message arguments.
+		fmt.Printf("Received OSC message: Address: %s, Arguments: %v\n", msg.Address, msg.Arguments)
 
-		matches := pathRegex.FindStringSubmatch(msg.Address)
-		// matches[0] is the full string, matches[1] is the first capture group (the ID).
+		// Check if it's a message to set/update the strip gain
+		matches := stripGainPathRegex.FindStringSubmatch(msg.Address)
 		if matches != nil && len(matches) > 1 {
 			idStr := matches[1]
-			id, err := strconv.Atoi(idStr)
+			id_1based, err := strconv.Atoi(idStr)
 			if err != nil {
-				log.Printf("Error converting ID '%s' to int: %v\n", idStr, err)
+				log.Printf("Error converting ID '%s' from path %s to int: %v\n", idStr, msg.Address, err)
 				return
 			}
 
-			// Expecting one argument: a float32 for the gain value.
 			if len(msg.Arguments) == 1 {
-				// Type assertion to get the float32 value.
-				// The 'ok' variable will be true if the assertion succeeds.
 				if gainValue, ok := msg.Arguments[0].(float32); ok {
-					fmt.Printf("Mock OSC: Received Gain for SooperID %d (path: %s) with value: %f\n", id, msg.Address, gainValue)
+					fmt.Printf("Mock OSC: Received/Set Gain for SooperID %d (path: %s) with value: %f\n", id_1based, msg.Address, gainValue)
+					// If we wanted the mock to have state:
+					// mockStripGains[id_1based] = gainValue
 				} else {
-					log.Printf("Mock OSC: Received message for SooperID %d but argument is not a float32: %T\n", id, msg.Arguments[0])
+					log.Printf("Mock OSC: Received message for SooperID %d (path: %s) but argument is not a float32: %T\n", id_1based, msg.Address, msg.Arguments[0])
 				}
 			} else {
-				log.Printf("Mock OSC: Received message for SooperID %d but expected 1 argument, got %d\n", id, len(msg.Arguments))
+				log.Printf("Mock OSC: Received message for SooperID %d (path: %s) but expected 1 argument, got %d\n", id_1based, msg.Address, len(msg.Arguments))
 			}
+			return // Message handled (or attempted)
 		}
-		// If the address doesn't match our specific pattern, it will just be logged by the initial Printf.
+
+		// Handler for GETTING the strip gain value (e.g., from sooperGUI's polling)
+		// Expects: /get_strip_gain <loopID_1based_int32> <return_url_string> <reply_path_string>
+		if msg.Address == "/get_strip_gain" {
+			if len(msg.Arguments) == 3 {
+				loopID_1based, okLoopID := msg.Arguments[0].(int32)
+				returnURL, okReturnURL := msg.Arguments[1].(string)
+				replyPath, okReplyPath := msg.Arguments[2].(string)
+
+				if okLoopID && okReturnURL && okReplyPath {
+					fmt.Printf("Mock OSC: Received /get_strip_gain for LoopID %d. Will reply to %s on path %s\n", loopID_1based, returnURL, replyPath)
+
+					// Extract host and port from returnURL (e.g., "osc.udp://127.0.0.1:9951")
+					// The go-osc client needs "host:port" format.
+					parsedReturnURL := strings.TrimPrefix(returnURL, "osc.udp://")
+					host, portStr, err := net.SplitHostPort(parsedReturnURL)
+					if err != nil {
+						log.Printf("Mock OSC: Error parsing returnURL '%s': %v\n", returnURL, err)
+						return
+					}
+					port, err := strconv.Atoi(portStr)
+					if err != nil {
+						log.Printf("Mock OSC: Error converting port '%s' from returnURL to int: %v\n", portStr, err)
+						return
+					}
+
+					// Create a temporary client to send the reply.
+					replyClient := osc.NewClient(host, port)
+					replyMsg := osc.NewMessage(replyPath)
+					
+					// Placeholder value. If mockStripGains was used, retrieve from there.
+					var valueToReturn float32 = 0.75 
+					// if val, exists := mockStripGains[int(loopID_1based)]; exists {
+					// 	valueToReturn = val
+					// }
+					replyMsg.Append(valueToReturn)
+
+					err = replyClient.Send(replyMsg)
+					if err != nil {
+						log.Printf("Mock OSC: Error sending reply to %s on path %s: %v\n", returnURL, replyPath, err)
+					} else {
+						fmt.Printf("Mock OSC: Sent reply to %s path %s with value %f for loop %d\n", returnURL, replyPath, valueToReturn, loopID_1based)
+					}
+
+				} else {
+					log.Printf("Mock OSC: Received /get_strip_gain with incorrect argument types: %T, %T, %T\n", msg.Arguments[0], msg.Arguments[1], msg.Arguments[2])
+				}
+			} else {
+				log.Printf("Mock OSC: Received /get_strip_gain with incorrect number of arguments: expected 3, got %d\n", len(msg.Arguments))
+			}
+			return // Message handled
+		}
 	})
 	if err != nil {
 		log.Fatalf("Error adding OSC message handler: %v", err)
 	}
 
-	// Define the address and port for the OSC server to listen on.
-	// Port 9090 as previously used for the mock.
 	serverAddr := "127.0.0.1:9090"
-
-	// Create the OSC server.
 	server := &osc.Server{
 		Addr:       serverAddr,
 		Dispatcher: dispatcher,
 	}
 
 	fmt.Printf("Mock OSC Server running and listening on udp://%s\n", serverAddr)
-	fmt.Printf("Expecting messages to pattern: /strip/Sooper<ID>/Gain/Gain%%20(dB)\n") // %% for literal % in Printf
+	fmt.Printf("Handles SET/UPDATE on: /strip/Sooper<ID>/Gain/Gain%%20(dB) <float32_value>\n")
+	fmt.Printf("Handles GET on: /get_strip_gain <int32_loopID_1based> <string_returnURL> <string_replyPath>\n")
 
-	// Start listening for OSC messages.
-	// This is a blocking call, so the program will stay running here.
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Error starting OSC server: %v", err)
 	}
