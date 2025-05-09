@@ -2,60 +2,84 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"net/http"
+	"log"
 	"regexp"
-	"strings"
+	"strconv"
+
+	"github.com/hypebeast/go-osc/osc"
 )
 
 func main() {
-	// Handler for the new dynamic POST endpoint and the old GET endpoint
-	http.HandleFunc("/strip/", func(w http.ResponseWriter, r *http.Request) {
-		// Regex to capture the ID from the path for the new POST pattern
-		// Path: /strip/Sooper<ID>/Gain/Gain (dB)
-		postPathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`)
-		postMatches := postPathRegex.FindStringSubmatch(r.URL.Path)
+	// Define the OSC address pattern we are interested in.
+	// This regex will capture the numeric ID part of "Sooper<ID>".
+	// Example: /strip/Sooper1/Gain/Gain (dB) -> ID will be "1"
+	// Note: OSC addresses don't typically contain spaces or parentheses,
+	// but we are matching the specific string provided.
+	// The path in OSC is usually a forward-slash separated string.
+	// The regex needs to match the literal characters, including parentheses.
+	// We use raw string literals (backticks) for the regex pattern
+	// to avoid needing to double-escape backslashes for special characters like (.
+	pathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`)
 
-		if postMatches != nil { // Matches the new POST pattern
-			if r.Method == http.MethodPost {
-				idStr := postMatches[1]
-				bodyBytes, err := io.ReadAll(r.Body)
-				if err != nil {
-					http.Error(w, "Error reading request body", http.StatusInternalServerError)
-					fmt.Printf("Error reading body for SooperID %s (path: %s): %v\n", idStr, r.URL.Path, err)
-					return
-				}
-				defer r.Body.Close() // Important to close the body
+	// Create a new OSC dispatcher.
+	// The dispatcher is responsible for routing incoming OSC messages
+	// to the correct handler functions based on their address.
+	dispatcher := osc.NewStandardDispatcher()
 
-				valueStr := strings.TrimSpace(string(bodyBytes))
-				fmt.Printf("Received POST for SooperID %s (path: %s) with gain value: %s\n", idStr, r.URL.Path, valueStr)
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintln(w, "POST received for SooperID "+idStr)
-			} else {
-				// Path matched POST pattern, but method is not POST
-				http.Error(w, "Method not allowed. Expected POST for this path pattern.", http.StatusMethodNotAllowed)
+	// Add a handler function for any OSC message that matches the regex.
+	// We use a generic "*" handler and then filter by regex inside,
+	// as the go-osc dispatcher doesn't directly support regex matching for handlers.
+	// Alternatively, one could register a handler for "/strip/*" if the library supports wildcards,
+	// or iterate through expected paths if IDs are known.
+	// For this specific case, we'll check the address inside a global handler.
+	err := dispatcher.AddMsgHandler("*", func(msg *osc.Message) {
+		fmt.Printf("Received OSC message: %s %v\n", msg.Address, msg.Arguments)
+
+		matches := pathRegex.FindStringSubmatch(msg.Address)
+		// matches[0] is the full string, matches[1] is the first capture group (the ID).
+		if matches != nil && len(matches) > 1 {
+			idStr := matches[1]
+			id, err := strconv.Atoi(idStr)
+			if err != nil {
+				log.Printf("Error converting ID '%s' to int: %v\n", idStr, err)
+				return
 			}
-			return // Handled
-		}
-		
-		// Check for the old GET endpoint if it didn't match the new POST pattern
-		if r.URL.Path == "/strip/Sooper1/Gain/Gain_dB" && r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprintln(w, "0.5") // mock response for old GET
-			return // Handled
-		}
 
-		// If no pattern under /strip/ matched
-		http.NotFound(w, r)
-		fmt.Printf("Path not handled under /strip/: %s by this handler\n", r.URL.Path)
+			// Expecting one argument: a float32 for the gain value.
+			if len(msg.Arguments) == 1 {
+				// Type assertion to get the float32 value.
+				// The 'ok' variable will be true if the assertion succeeds.
+				if gainValue, ok := msg.Arguments[0].(float32); ok {
+					fmt.Printf("Mock OSC: Received Gain for SooperID %d (path: %s) with value: %f\n", id, msg.Address, gainValue)
+				} else {
+					log.Printf("Mock OSC: Received message for SooperID %d but argument is not a float32: %T\n", id, msg.Arguments[0])
+				}
+			} else {
+				log.Printf("Mock OSC: Received message for SooperID %d but expected 1 argument, got %d\n", id, len(msg.Arguments))
+			}
+		}
+		// If the address doesn't match our specific pattern, it will just be logged by the initial Printf.
 	})
-	
-	fmt.Println("Mock API running at http://localhost:9090")
-	fmt.Println("  Handles GET /strip/Sooper1/Gain/Gain_dB")
-	fmt.Println("  Handles POST /strip/Sooper<ID>/Gain/Gain (dB)")
-
-	err := http.ListenAndServe(":9090", nil)
 	if err != nil {
-		fmt.Printf("Error starting server: %s\n", err)
+		log.Fatalf("Error adding OSC message handler: %v", err)
+	}
+
+	// Define the address and port for the OSC server to listen on.
+	// Port 9090 as previously used for the mock.
+	serverAddr := "127.0.0.1:9090"
+
+	// Create the OSC server.
+	server := &osc.Server{
+		Addr:       serverAddr,
+		Dispatcher: dispatcher,
+	}
+
+	fmt.Printf("Mock OSC Server running and listening on udp://%s\n", serverAddr)
+	fmt.Printf("Expecting messages to pattern: /strip/Sooper<ID>/Gain/Gain (dB)\n")
+
+	// Start listening for OSC messages.
+	// This is a blocking call, so the program will stay running here.
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Error starting OSC server: %v", err)
 	}
 }

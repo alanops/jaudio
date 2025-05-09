@@ -12,13 +12,11 @@ package main
 // The 'import' keyword is used to include packages that provide additional functionality.
 // Go's standard library offers many useful packages. Third-party packages can also be imported.
 import (
-	"bytes" // Provides functions for manipulating byte slices, used here for HTTP request bodies.
 	"flag"  // Provides support for command-line flag parsing.
 	"fmt"   // Implements formatted I/O (like C's printf and scanf).
 	"log"   // Implements simple logging.
 	"math"  // Provides basic mathematical constants and functions.
 	"net"   // Provides a portable interface for network I/O, including TCP/IP, UDP, domain name resolution, and Unix domain sockets.
-	"net/http" // Provides HTTP client and server implementations. Used here for sending HTTP POST requests.
 	"os"    // Provides a platform-independent interface to operating system functionality.
 	"os/exec" // Provides functions for running external commands.
 	"strconv" // Implements conversions to and from string representations of basic data types.
@@ -163,10 +161,7 @@ Options:
 		os.Exit(0)
 	}
 
-	// --- Relaunch in a new st terminal if not already in one (COMMENTED OUT) ---
-	// This section was intended to make the GUI run in a specific terminal ('st').
-	// It's commented out because 'st' might not be installed on all systems,
-	// and running external commands like this can be complex to manage robustly.
+	// --- Relaunch in a new st terminal if not already in one ---
 	if os.Getenv("SOOPERGUI_XTERM") == "" { // Check an environment variable
 		self, err := os.Executable() // Get path to current executable
 		if err != nil {
@@ -196,9 +191,9 @@ Options:
 		os.Exit(0) // Exit this parent process
 	}
 
-	// --- In the child process: set up logging and terminal colors (COMMENTED OUT as it depends on SOOPERGUI_XTERM) ---
-	// This section was for when the program was relaunched inside 'st'.
-	// It tried to set terminal colors and redirect logging back to the original parent terminal.
+	// --- In the child process: set up logging and terminal colors ---
+	// This section is for when the program was relaunched inside 'st'.
+	// It sets terminal colors and redirects logging back to the original parent terminal.
 	if os.Getenv("SOOPERGUI_XTERM") != "" {
 		fmt.Print("\033]10;#00FF00\007\033]11;#000000\007") // ANSI escape codes for colors
 		ppid := os.Getppid() // Get parent process ID
@@ -537,40 +532,29 @@ Options:
 				}
 				mu.Unlock() // Unlock mutex.
 
-				// Send HTTP POST request to the mock API in a new goroutine.
-				// This prevents the TUI from freezing while waiting for the HTTP request.
+				// Send OSC message for level control.
 				go func(loopID int, valueToSend float32) {
-					// The mock API expects a 1-based loop ID in the URL.
-					// 'row' from table.CellAt is already 1-based for data rows.
-					url := fmt.Sprintf("http://localhost:9090/strip/Sooper%d/Gain/Gain (dB)", loopID)
-					// Convert the float value to a string for the request body.
-					body := []byte(fmt.Sprintf("%f", valueToSend))
+					// Construct the OSC address. Note: SooperLooper loop IDs are typically 0-indexed in OSC paths like /sl/0/set
+					// However, the new endpoint is specified as /strip/Sooper<ID>/Gain/Gain (dB) where ID is 1-based.
+					// We use 'row' which is 1-based from the table.
+					oscAddress := fmt.Sprintf("/strip/Sooper%d/Gain/Gain (dB)", loopID)
+					msg := osc.NewMessage(oscAddress)
+					msg.Append(valueToSend) // Append the float value.
 
-					// Create a new HTTP POST request.
-					// bytes.NewBuffer creates an in-memory reader for the byte slice body.
-					req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-					if err != nil {
-						errorLog.Printf("Error creating HTTP request for loop %d: %v", loopID, err)
-						return // Exit goroutine on error.
+					// Use the global OSC client.
+					// Ensure 'client' is initialized and available.
+					// The client is configured with oscHost and oscPort from flags/defaults.
+					if client != nil {
+						err := client.Send(msg)
+						if err != nil {
+							errorLog.Printf("Error sending OSC message to %s for loop %d: %v", oscAddress, loopID, err)
+						} else if *debugFlag {
+							infoLog.Printf("OSC OUT to %s with value %.4f", oscAddress, valueToSend)
+						}
+					} else {
+						errorLog.Println("OSC client is not initialized. Cannot send level update.")
 					}
-					req.Header.Set("Content-Type", "text/plain") // Set content type for the plain text body.
-
-					// Create an HTTP client with a timeout.
-					httpClient := &http.Client{Timeout: time.Second * 2}
-					// Send the request.
-					resp, err := httpClient.Do(req)
-					if err != nil {
-						errorLog.Printf("Error sending HTTP POST for loop %d to %s: %v", loopID, url, err)
-						return // Exit goroutine on error.
-					}
-					// It's important to close the response body to free resources,
-					// even if we don't read from it. 'defer' ensures this happens.
-					defer resp.Body.Close()
-
-					if *debugFlag {
-						infoLog.Printf("HTTP POST to %s with value %.4f, Status: %s", url, valueToSend, resp.Status)
-					}
-				}(row, wet) // Pass current 'row' (loopID) and 'wet' value to the goroutine.
+				}(row, wet) // Pass current 'row' (1-based loopID) and 'wet' value to the goroutine.
 				return action, event // Event handled.
 			}
 		}
