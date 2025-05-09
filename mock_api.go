@@ -16,10 +16,11 @@ func main() {
 	// Note: OSC addresses don't typically contain spaces or parentheses,
 	// but we are matching the specific string provided.
 	// The path in OSC is usually a forward-slash separated string.
-	// The regex needs to match the literal characters, including parentheses.
+	// The regex needs to match the literal characters, including parentheses and the literal "%20".
 	// We use raw string literals (backticks) for the regex pattern
 	// to avoid needing to double-escape backslashes for special characters like (.
-	pathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`)
+	// The "%" also doesn't need escaping in a raw string literal for regex.
+	pathRegex := regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain%20\(dB\)$`)
 
 	// Create a new OSC dispatcher.
 	// The dispatcher is responsible for routing incoming OSC messages
@@ -75,7 +76,7 @@ func main() {
 	}
 
 	fmt.Printf("Mock OSC Server running and listening on udp://%s\n", serverAddr)
-	fmt.Printf("Expecting messages to pattern: /strip/Sooper<ID>/Gain/Gain (dB)\n")
+	fmt.Printf("Expecting messages to pattern: /strip/Sooper<ID>/Gain/Gain%%20(dB)\n") // %% for literal % in Printf
 
 	// Start listening for OSC messages.
 	// This is a blocking call, so the program will stay running here.
