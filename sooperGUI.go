@@ -19,6 +19,7 @@ import (
 	"net"   // Provides a portable interface for network I/O, including TCP/IP, UDP, domain name resolution, and Unix domain sockets.
 	"os"    // Provides a platform-independent interface to operating system functionality.
 	"os/exec" // Provides functions for running external commands.
+	"regexp" // Added for regular expression matching of OSC paths.
 	"strconv" // Implements conversions to and from string representations of basic data types.
 	"strings" // Implements simple functions to manipulate UTF-8 encoded strings.
 	"sync"    // Provides basic synchronization primitives such as mutual exclusion locks (mutexes).
@@ -70,6 +71,10 @@ type ButtonState struct {
 // Global variables are generally discouraged for complex state, but can be acceptable for configuration
 // or truly global singletons if managed carefully (e.g., with mutexes for concurrent access).
 var (
+	// Regex for parsing the custom strip gain path.
+	// It captures the numeric ID from "/strip/Sooper<ID>/Gain/Gain (dB)".
+	stripGainPathRegex = regexp.MustCompile(`^/strip/Sooper(\d+)/Gain/Gain \(dB\)$`)
+
 	// oscHost is the IP address or hostname of the SooperLooper OSC server.
 	// Default is "127.0.0.1" (localhost), meaning SooperLooper is expected to be running on the same machine.
 	oscHost = "127.0.0.1"
@@ -809,6 +814,36 @@ func handleOSC(msg *osc.Message) {
 	// A 'switch' statement without an expression is an alternative way to write if-else-if chains.
 	// Each 'case' contains a boolean expression.
 	switch {
+	// Handle updates for the custom /strip/Sooper<ID>/Gain/Gain (dB) path
+	case stripGainPathRegex.MatchString(msg.Address):
+		matches := stripGainPathRegex.FindStringSubmatch(msg.Address)
+		if len(matches) > 1 {
+			idStr := matches[1]
+			loopID_1based, err := strconv.Atoi(idStr)
+			if err == nil {
+				loopIdx_0based := loopID_1based - 1 // Convert 1-based ID to 0-based for map key
+				if loopIdx_0based >= 0 {
+					if len(msg.Arguments) == 1 {
+						if val, ok := msg.Arguments[0].(float32); ok {
+							ls := getLoopState(loopIdx_0based)
+							ls.Wet = val // Assuming this path controls what we display as "Wet"
+							if *debugFlag {
+								infoLog.Printf("OSC IN (StripGain): Loop %d, Address %s, Wet set to %.4f", loopIdx_0based, msg.Address, val)
+							}
+						} else {
+							if *debugFlag {
+								errorLog.Printf("OSC IN (StripGain): Loop %d, Address %s, Arg not float32: %T", loopIdx_0based, msg.Address, msg.Arguments[0])
+							}
+						}
+					} else {
+						if *debugFlag {
+							errorLog.Printf("OSC IN (StripGain): Loop %d, Address %s, Expected 1 arg, got %d", loopIdx_0based, msg.Address, len(msg.Arguments))
+						}
+					}
+				}
+			}
+		}
+
 	case msg.Address == "/pong": // Reply to our initial ping.
 		// SooperLooper's /pong message arguments: [our_return_url, our_reply_path, loop_count, version_string, ...]
 		if len(msg.Arguments) >= 3 {
