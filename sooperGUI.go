@@ -259,9 +259,10 @@ Options:
 	// Add a message handler for all incoming OSC messages ("*").
 	// The handler is an anonymous function (a closure) that takes an *osc.Message.
 	dispatcher.AddMsgHandler("*", func(msg *osc.Message) {
-		// Log ALL incoming messages unconditionally before further processing to aid feedback debugging.
+		// Log ALL incoming messages unconditionally before further processing to aid feedback debugging,
+		// using infoLog so it's correctly redirected if running in 'st'.
 		// This will show if replies from mock_api.go are reaching this listener.
-		log.Printf("VERBOSE OSC IN (Main Dispatcher): Address: %s, Arguments: %v", msg.Address, msg.Arguments)
+		infoLog.Printf("VERBOSE OSC IN (Main Dispatcher): Address: %s, Arguments: %v", msg.Address, msg.Arguments)
 
 		// If the debug flag is enabled, log the incoming message (this is now somewhat redundant but kept for consistency).
 		// *debugFlag dereferences the pointer to get the boolean value.
