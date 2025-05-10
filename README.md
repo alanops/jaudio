@@ -15,7 +15,7 @@ This project consists of a Terminal User Interface (TUI) for the SooperLooper li
 *   **`3track-sooper.slsess`**:
     *   A SooperLooper session file, likely containing a pre-configured 3-track looping setup. This can be loaded into SooperLooper to be controlled by `sooperGUI.go`.
 *   **`CHANGELOG.md`**:
-    *   Contains a log of significant changes made to the project. See [`CHANGELOG.md`](CHANGELOG.md:) for details.
+    *   Contains a log of significant changes made to the project. See [`CHANGELOG.md`](CHANGELOG.md:0) for details.
 
 ## Prerequisites
 
@@ -73,10 +73,25 @@ This server provides the HTTP endpoints that `sooperGUI.go` uses for level contr
 
 This is the main TUI application.
 
-*   **Command:**
+*   **Build (Recommended):**
+    First, build the executable:
     ```bash
-    go run sooperGUI.go [FLAGS]
+    go build sooperGUI.go
     ```
+    This creates an executable file named `sooperGUI` in the current directory.
+
+*   **Run:**
+    To run the TUI directly in your current terminal (avoiding issues with new window creation in some environments):
+    ```bash
+    SOOPERGUI_XTERM=1 ./sooperGUI [FLAGS]
+    ```
+    Alternatively, you can run it directly without building first (though building is recommended for repeated use):
+    ```bash
+    SOOPERGUI_XTERM=1 go run sooperGUI.go [FLAGS]
+    ```
+*   **Why `SOOPERGUI_XTERM=1`?**
+    *   By default, `sooperGUI.go` attempts to launch itself in a new `st` terminal window. If `st` is not installed or if you're in an environment without a display server (like a headless server or some CI systems), this can cause a "can't open display" error.
+    *   Setting the `SOOPERGUI_XTERM=1` environment variable tells the application to skip launching a new window and instead run the TUI within the current terminal session.
 *   **Description:**
     *   Starts the Terminal User Interface.
     *   Attempts to connect to a SooperLooper instance via OSC (defaults to `127.0.0.1:9951`). Ensure SooperLooper is running and configured to listen for OSC on this address and port.
@@ -95,3 +110,4 @@ This is the main TUI application.
 *   OSC communication for receiving updates from and sending basic pings to SooperLooper.
 *   Interactive mouse-driven control for loop "Level" faders, now integrated with the `mock_api.go` via HTTP.
 *   Configurable connection parameters and refresh rate.
+*   Recent fixes ensure compatibility with current `tview` library versions (as of May 2025) and address issues with cell coordinate detection and mouse event handling.
