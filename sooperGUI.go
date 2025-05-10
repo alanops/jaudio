@@ -293,7 +293,7 @@ func main() {
 		if col != 7 || row > loopCount {
 			return action, ev
 		}
-		cellContentX, _, cellContentWidth, _ := table.GetCell(row, col).GetLastPosition()
+		cellContentX, _, cellContentWidth := table.GetCell(row, col).GetLastPosition()
 		relX := x - cellContentX
 		var fill float32
 		if cellContentWidth > 0 {
@@ -391,12 +391,25 @@ func getColWidth(col int, fixed []int, meter int) int {
 
 func tableCoordinatesAt(t *tview.Table, x, y int) (row, col int, ok bool) {
 	ok = false
-	t.ForEachCell(func(r, c int, cell *tview.TableCell) {
-		cx, cy, cw, ch := cell.GetLastPosition()
-		if x >= cx && x < cx+cw && y >= cy && y < cy+ch {
-			row, col, ok = r, c, true
+	// Iterate over all cells to find which one contains the coordinates (x, y)
+	// Replaces ForEachCell which seems undefined, and fixes GetLastPosition arity.
+	// Assumes GetRowCount and GetColumnCount exist on tview.Table.
+	for r_idx := 0; r_idx < t.GetRowCount(); r_idx++ {
+		for c_idx := 0; c_idx < t.GetColumnCount(); c_idx++ {
+			tableCell := t.GetCell(r_idx, c_idx) // Renamed 'cell' to 'tableCell' to avoid conflict if 'cell' is a package name
+			if tableCell == nil {
+				continue
+			}
+			// GetLastPosition likely returns x, y, width of the cell's content.
+			cellX, cellY, cellWidth := tableCell.GetLastPosition()
+			
+			// Assuming cell height is 1 for click detection purposes (y must match cellY).
+			if x >= cellX && x < cellX+cellWidth && y == cellY {
+				row, col, ok = r_idx, c_idx, true
+				return // Found the cell
+			}
 		}
-	})
+	}
 	return
 }
 
